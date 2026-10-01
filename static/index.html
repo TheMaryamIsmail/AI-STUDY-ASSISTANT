@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Study Assistant (RAG)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Light Glassmorphism Custom Backdrop Blur & Gradients */
+        body {
+            background: linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+        }
+        .glass-inner {
+            background: rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+        }
+    </style>
+</head>
+<body class="text-slate-700 min-h-screen flex flex-col items-center justify-center p-6">
+    <div class="max-w-3xl w-full glass-card rounded-2xl p-8">
+        <h1 class="text-3xl font-extrabold text-blue-600 mb-2 tracking-tight">📚 AI Study Assistant</h1>
+        <p class="text-slate-500 mb-6 text-sm md:text-base">Upload 1 to 10 Python Chapter PDFs[cite: 1, 2], build local vector embeddings, and ask intelligent questions[cite: 2].</p>
+
+        <!-- PDF Upload Section -->
+        <div class="mb-6 p-5 glass-inner rounded-xl">
+            <h2 class="text-base font-semibold mb-3 text-blue-700">Step 1: Upload PDF Chapters (1 to 10 files)</h2>
+            <input type="file" id="pdfFiles" multiple accept=".pdf" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer mb-3 transition"/>
+            <button onclick="uploadPDFs()" id="uploadBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2 rounded-lg transition shadow-sm">Process & Embed PDFs</button>
+            <p id="uploadStatus" class="mt-3 text-sm font-medium"></p>
+        </div>
+
+        <!-- Q&A Section -->
+        <div class="p-5 glass-inner rounded-xl">
+            <h2 class="text-base font-semibold mb-3 text-blue-700">Step 2: Ask Study Questions</h2>
+            <div class="flex gap-2 mb-4">
+                <input type="text" id="questionInput" placeholder="e.g., What are Python variables? or Explain lists vs tuples..." class="flex-1 bg-white/70 border border-slate-200 rounded-lg px-4 py-2 text-slate-700 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-sm transition"/>
+                <button onclick="askQuestion()" id="askBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-5 py-2 rounded-lg transition shadow-sm">Ask AI</button>
+            </div>
+            
+            <div id="loading" class="hidden text-blue-600 animate-pulse text-sm mb-3 font-medium">Searching vector database and querying Grok model...</div>
+            
+            <div id="answerBox" class="hidden bg-white/80 p-4 rounded-lg border border-slate-200 shadow-sm">
+                <h3 class="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">Answer:</h3>
+                <p id="answerText" class="text-slate-700 mb-3 whitespace-pre-line text-sm md:text-base"></p>
+                <div class="text-xs text-slate-400 border-t border-slate-100 pt-2">
+                    <span class="font-semibold text-slate-500">Sources: </span><span id="sourceText"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function uploadPDFs() {
+            const fileInput = document.getElementById('pdfFiles');
+            const statusBox = document.getElementById('uploadStatus');
+            
+            const fileCount = fileInput.files.length;
+            if (fileCount < 1 || fileCount > 10) {
+                alert('Please select between 1 and 10 PDF files.');
+                return;
+            }
+
+            const formData = new FormData();
+            for (let i = 0; i < fileCount; i++) {
+                formData.append('files', fileInput.files[i]);
+            }
+
+            statusBox.textContent = 'Uploading, chunking, and embedding vectors...';
+            statusBox.className = 'mt-3 text-sm font-medium text-blue-600';
+            
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    statusBox.textContent = data.message;
+                    statusBox.className = 'mt-3 text-sm font-medium text-emerald-600';
+                } else {
+                    statusBox.textContent = 'Error: ' + data.detail;
+                    statusBox.className = 'mt-3 text-sm font-medium text-red-600';
+                }
+            } catch (err) {
+                statusBox.textContent = 'Network error during upload.';
+                statusBox.className = 'mt-3 text-sm font-medium text-red-600';
+            }
+        }
+
+        async function askQuestion() {
+            const question = document.getElementById('questionInput').value;
+            const loading = document.getElementById('loading');
+            const answerBox = document.getElementById('answerBox');
+            const answerText = document.getElementById('answerText');
+            const sourceText = document.getElementById('sourceText');
+
+            if (!question.trim()) return;
+
+            loading.classList.remove('hidden');
+            answerBox.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question })
+                });
+                const data = await response.json();
+                
+                loading.classList.add('hidden');
+                if (response.ok) {
+                    answerText.textContent = data.answer;
+                    sourceText.textContent = data.sources.join(', ');
+                    answerBox.classList.remove('hidden');
+                } else {
+                    alert('Error: ' + data.detail);
+                }
+            } catch (err) {
+                loading.classList.add('hidden');
+                alert('Failed to connect to backend server.');
+            }
+        }
+    </script>
+</body>
+</html>
